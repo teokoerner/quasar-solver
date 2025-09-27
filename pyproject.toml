@@ -1,0 +1,18 @@
+# pyproject.toml
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "quasar_solver"
+version = "0.1.0"
+description = "A Simulated Annealing solver for QUBO problems."
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
