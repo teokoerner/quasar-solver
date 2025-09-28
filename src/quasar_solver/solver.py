@@ -24,8 +24,9 @@ class Solver:
         final_temp: float = 0.1,
         cooling_rate: float = 0.99,
         schedule: Callable[[float, Dict[str, Any]], float] = geometric_cooling,
+        track_history: bool = False,
         schedule_params: Optional[Dict[str, Any]] = None,
-        iterations_per_temp: int = 100
+        iterations_per_temp: int = 100,
     ):
         """
         Initializes the SA Solver with annealing parameters.
@@ -46,6 +47,7 @@ class Solver:
         self.final_temp = final_temp
         self.cooling_rate = cooling_rate
         self.iterations_per_temp = iterations_per_temp
+        self.track_history = track_history
 
         self.schedule = schedule
         # Set default parameters for our default schedule
@@ -72,9 +74,13 @@ class Solver:
         best_energy = current_energy
 
         current_temp = self.initial_temp
-        energy_history: List[float] = [best_energy]
-        
-        print("Starting simulated annealing...")
+        history: Dict[str, Any] = {}
+        if self.track_history:
+            history = {
+                "temperatures": [],
+                "current_energies": [],
+                "best_energies": []
+            }
 
         # 2. Main annealing loop
         while current_temp > self.final_temp:
@@ -89,15 +95,19 @@ class Solver:
                     best_energy = current_energy
                     best_state = current_state.copy()
             
+            if self.track_history:
+                history["temperatures"].append(current_temp)
+                history["current_energies"].append(current_energy)
+                history["best_energies"].append(best_energy)
+            
             # 2c. Cool down the system
             current_temp = self.schedule(current_temp, self.schedule_params)
-            energy_history.append(best_energy)
 
         print(f"Annealing complete. Final energy: {best_energy}")
 
         return SolverResult(
             state=best_state,
             energy=best_energy,
-            history=energy_history
+            history=history
         )
     

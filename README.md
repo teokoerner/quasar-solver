@@ -20,19 +20,18 @@ from quasar_solver import solve_qubo
 
 # Define a simple QUBO problem (e.g., a MAX-CUT instance)
 Q = np.array([
-    [-1, 2, 2, 0],
-    [0, -1, 2, 2],
-    [0, 0, -1, 2],
-    [0, 0, 0, -1]
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, 0, -1]
 ])
 
 # Run the solver
 solver = Solver(
     qubo=Q,
     initial_temp=10.0,
-    final_temp=0.1,
-    iterations_per_temp=500,
-    schedule_params={'alpha': 0.97}
+    final_temp=0.05,
+    iterations_per_temp=200,
+    schedule_params={'alpha': 0.95}
 )
 
 # Run the annealing process

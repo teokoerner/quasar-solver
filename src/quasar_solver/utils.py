@@ -2,7 +2,7 @@
 
 import numpy as np
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, Any
 
 @dataclass(frozen=True)
 class SolverResult:
@@ -14,9 +14,12 @@ class SolverResult:
     Attributes:
         state (np.ndarray): The best binary state vector found.
         energy (float): The energy of the best state.
-        history (List[float]): A list of the best energy found at each
-                               temperature step, tracking convergence.
+        history (Dict[str, Any]): A dictionary containing the run's history data,
+                                  such as temperatures and energies over time.
+                                  This will be empty if the solver was run
+                                  with `track_history=False`.
     """
     state: np.ndarray
     energy: float
-    history: List[float]
+    history: Dict[str, Any]
+    
