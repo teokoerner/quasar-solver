@@ -70,19 +70,17 @@ class QUBO:
         Returns:
             float: The change in energy (ΔE) that would result from the flip.
         """
-        # The change in state for the flipped bit, delta_xi = (1 - xi) - xi = 1 - 2*xi
-        delta_xi = 1 - 2 * x[flip_index]
+        # The factor (1 - 2*x_i) is +1 if flipping 0->1 and -1 if flipping 1->0.
+        direction = 1 - 2 * x[flip_index]
 
-        # The change in energy is derived from the expansion of the quadratic form.
-        # It consists of the diagonal term at Q[i,i] and the off-diagonal
-        # terms connected to the flipped variable.
-        # This vectorized operation is equivalent to the sum in the docstring.
-        off_diagonal_sum = np.dot(self.Q[flip_index, :], x) + np.dot(self.Q[:, flip_index], x)
+        # The change in energy is the sum of the diagonal and off-diagonal terms
+        # associated with the flipped bit.
+        # Q[i,i] is the diagonal term.
+        # The dot product calculates sum_{j} (Q[i,j] + Q[j,i]) * x[j]. We subtract
+        # 2 * Q[i,i] * x[i] to remove the j=i case.
+        row_col_sum = np.dot(self.Q[flip_index, :], x) + np.dot(self.Q[:, flip_index], x)
         
-        # The diagonal term Q[i,i]*x[i] is counted twice in the sum above,
-        # so we must subtract it once to get the correct sum over j!=i.
-        # We also need to add the change from the diagonal term itself.
-        # The total change is: delta_xi * (Q[i,i] + sum_{j!=i}(Q[i,j] + Q[j,i])x_j)
-        delta_E = delta_xi * (off_diagonal_sum - 2 * self.Q[flip_index, flip_index] * x[flip_index])
+        delta_E = direction * (self.Q[flip_index, flip_index] + row_col_sum - 2 * self.Q[flip_index, flip_index] * x[flip_index])
         
         return float(delta_E)
+    

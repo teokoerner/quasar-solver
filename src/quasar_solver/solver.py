@@ -65,32 +65,39 @@ class Solver:
                           its energy, and the convergence history.
         """
         # 1. Initialize the system
-        # Start with a random binary state vector
         current_state = np.random.randint(0, 2, size=self.qubo.num_variables)
         current_energy = self.qubo.energy(current_state)
 
-        # The best solution found so far is initially the starting solution
         best_state = current_state.copy()
         best_energy = current_energy
 
         current_temp = self.initial_temp
         history: Dict[str, Any] = {}
+        
         if self.track_history:
             history = {
                 "temperatures": [],
                 "current_energies": [],
-                "best_energies": []
+                "best_energies": [],
+                "acceptance_rates": []  # Added for plotting
             }
 
         # 2. Main annealing loop
         while current_temp > self.final_temp:
+            accepted_moves = 0
             # 2a. Run MCMC steps at the current temperature
             for _ in range(self.iterations_per_temp):
-                current_state, current_energy = run_mcmc_step(
+                new_state, new_energy = run_mcmc_step(
                     self.qubo, current_state, current_energy, current_temp
                 )
+                
+                # Check if the move was accepted
+                if new_energy != current_energy:
+                    accepted_moves += 1
 
-                # 2b. Update the best-known solution if the current one is better
+                current_state, current_energy = new_state, new_energy
+
+                # 2b. Update the best-known solution
                 if current_energy < best_energy:
                     best_energy = current_energy
                     best_state = current_state.copy()
@@ -99,6 +106,9 @@ class Solver:
                 history["temperatures"].append(current_temp)
                 history["current_energies"].append(current_energy)
                 history["best_energies"].append(best_energy)
+                # Calculate and store the acceptance rate for this temperature
+                acceptance_rate = accepted_moves / self.iterations_per_temp
+                history["acceptance_rates"].append(acceptance_rate)
             
             # 2c. Cool down the system
             current_temp = self.schedule(current_temp, self.schedule_params)
@@ -110,4 +120,3 @@ class Solver:
             energy=best_energy,
             history=history
         )
-    

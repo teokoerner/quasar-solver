@@ -4,9 +4,14 @@
 
 A from-scratch Simulated Annealing (SA) solver in Python, designed for solving **Quadratic Unconstrained Binary Optimization (QUBO)** problems.
 
+![Photo of a quasar by NASA](quasar.jpg) 
+*Photo by <a href="https://unsplash.com/@hubblespacetelescope?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">NASA Hubble Space Telescope</a> on <a href="https://unsplash.com/photos/an-image-of-a-very-large-and-colorful-object-in-the-sky-TZIorZKAXYo?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">Unsplash</a>*
+      
 ## About This Project
 
-Quasar is primarily a personal development project focused on the intersection of physics, mathematics, and computer science. The name is inspired by the astronomical phenomenon—just as a quasar is an extremely luminous object in the vastness of space, this project aims to be a tool for finding optimal solutions in a vast search space.
+Quasar is primarily a personal development project focused on the intersection of physics, mathematics, and computer science for solving combinatorial optimization problems. 
+
+It's name is inspired by the astronomical phenomenon 'quasar'. A quasar is the active core of a galaxy that appears almost point-like (like a star) in the visible range of light and emits very large amounts of energy in other wavelength ranges. Just as a quasar is an extremely luminous object in the vastness of space, this project aims to be a tool for finding optimal solutions in a vast search space.
 
 ## Getting Started
 
