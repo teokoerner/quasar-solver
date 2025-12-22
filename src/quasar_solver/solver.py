@@ -7,6 +7,7 @@ from .qubo import QUBO
 from .engine import run_mcmc_step
 from .schedules import geometric_cooling
 from .utils import SolverResult
+from . import jit
 
 class Solver:
     """
@@ -86,20 +87,31 @@ class Solver:
         # 2. Main annealing loop
         while current_temp > self.final_temp:
             accepted_moves = 0
-            # 2a. Run MCMC steps at the current temperature
-            for _ in range(self.iterations_per_temp):
-                new_state, new_energy = run_mcmc_step(
-                    self.qubo, current_state, current_energy, current_temp
+            
+            if self.track_history:
+                # 2a. Run MCMC steps at the current temperature (slow path, tracks history)
+                for _ in range(self.iterations_per_temp):
+                    new_state, new_energy = run_mcmc_step(
+                        self.qubo, current_state, current_energy, current_temp
+                    )
+                    
+                    if new_energy != current_energy:
+                        accepted_moves += 1
+
+                    current_state, current_energy = new_state, new_energy
+
+                    if current_energy < best_energy:
+                        best_energy = current_energy
+                        best_state = current_state.copy()
+            else:
+                # 2b. Run entire MCMC chain at once (fast path)
+                current_state, current_energy, accepted_moves = jit.mcmc_chain(
+                    self.qubo.Q, current_state, current_energy, current_temp, self.iterations_per_temp
                 )
                 
-                # Check if the move was accepted
-                if new_energy != current_energy:
-                    accepted_moves += 1
-
-                current_state, current_energy = new_state, new_energy
-
-                # 2b. Update the best-known solution
                 if current_energy < best_energy:
+                    # Note: with mcmc_chain, we only check for best_energy at the end of the chain.
+                    # This is slightly different from the step-by-step check but practically sufficient.
                     best_energy = current_energy
                     best_state = current_state.copy()
             

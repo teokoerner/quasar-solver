@@ -1,6 +1,7 @@
 # src/quasar_solver/qubo.py
 
 import numpy as np
+from . import jit
 
 class QUBO:
     """
@@ -57,7 +58,8 @@ class QUBO:
 
     def energy_delta(self, x: np.ndarray, flip_index: int) -> float:
         """
-        Calculates the change in energy from flipping a single bit.
+        Calculates the change in energy from flipping a single bit using Numba njit for 
+        runtime acceleration. 
 
         This method provides an efficient O(N) calculation for the energy
         difference (ΔE) if the bit at `flip_index` were to be flipped.
@@ -70,17 +72,5 @@ class QUBO:
         Returns:
             float: The change in energy (ΔE) that would result from the flip.
         """
-        # The factor (1 - 2*x_i) is +1 if flipping 0->1 and -1 if flipping 1->0.
-        direction = 1 - 2 * x[flip_index]
-
-        # The change in energy is the sum of the diagonal and off-diagonal terms
-        # associated with the flipped bit.
-        # Q[i,i] is the diagonal term.
-        # The dot product calculates sum_{j} (Q[i,j] + Q[j,i]) * x[j]. We subtract
-        # 2 * Q[i,i] * x[i] to remove the j=i case.
-        row_col_sum = np.dot(self.Q[flip_index, :], x) + np.dot(self.Q[:, flip_index], x)
-        
-        delta_E = direction * (self.Q[flip_index, flip_index] + row_col_sum - 2 * self.Q[flip_index, flip_index] * x[flip_index])
-        
-        return float(delta_E)
+        return jit.energy_delta(self.Q, x, flip_index)
     
