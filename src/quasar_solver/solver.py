@@ -79,7 +79,8 @@ class Solver:
                 "temperatures": [],
                 "current_energies": [],
                 "best_energies": [],
-                "acceptance_rates": []  # Added for plotting
+                "acceptance_rates": [],  # Added for plotting
+                "iterations": []
             }
 
         # 2. Main annealing loop
@@ -109,6 +110,10 @@ class Solver:
                 # Calculate and store the acceptance rate for this temperature
                 acceptance_rate = accepted_moves / self.iterations_per_temp
                 history["acceptance_rates"].append(acceptance_rate)
+                # Calculate cumulative iterations: (current_index + 1) * iterations_per_temp
+                # Use len(history['temperatures']) which now includes the current step
+                cumulative_iterations = len(history["temperatures"]) * self.iterations_per_temp
+                history["iterations"].append(cumulative_iterations)
             
             # 2c. Cool down the system
             current_temp = self.schedule(current_temp, self.schedule_params)
