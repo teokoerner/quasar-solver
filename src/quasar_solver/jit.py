@@ -61,19 +61,23 @@ def mcmc_chain(
     current_energy: float,
     temperature: float,
     iterations: int,
-) -> Tuple[np.ndarray, float, int]:
+) -> Tuple[np.ndarray, float, int, np.ndarray, float]:
     """
     JIT-optimized execution of multiple MCMC steps (a Markov chain) at a fixed temperature.
     This provides massive performance gains by avoiding Python loop overhead and 
     repetitive JIT function call overhead.
     
     Returns:
-        Tuple[np.ndarray, float, int]: (new_state, new_energy, accepted_moves_count)
+        Tuple[np.ndarray, float, int, np.ndarray, float]: 
+            (final_state, final_energy, accepted_moves_count, best_state_in_chain, best_energy_in_chain)
     """
     num_vars = len(current_state)
     accepted_moves = 0
     state = current_state.copy()
     energy = current_energy
+    
+    best_state = state.copy()
+    best_energy = energy
     
     for _ in range(iterations):
         flip_index = np.random.randint(0, num_vars)
@@ -84,4 +88,8 @@ def mcmc_chain(
             energy += delta_E
             accepted_moves += 1
             
-    return state, energy, accepted_moves
+            if energy < best_energy:
+                best_energy = energy
+                best_state = state.copy()
+            
+    return state, energy, accepted_moves, best_state, best_energy

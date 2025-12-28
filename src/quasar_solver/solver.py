@@ -1,10 +1,10 @@
 # src/quasar_solver/solver.py
 
 import numpy as np
-from typing import Callable, List, Dict, Any, Optional
+import concurrent.futures
+from typing import Callable, Dict, Any, Optional
 
 from .qubo import QUBO
-from .engine import run_mcmc_step
 from .schedules import geometric_cooling
 from .utils import SolverResult
 from . import jit
@@ -28,6 +28,8 @@ class Solver:
         track_history: bool = False,
         schedule_params: Optional[Dict[str, Any]] = None,
         iterations_per_temp: int = 100,
+        num_reads: int = 1,
+        multiprocessing: bool = False
     ):
         """
         Initializes the SA Solver with annealing parameters.
@@ -39,16 +41,22 @@ class Solver:
             cooling_rate (float): The cooling factor for the geometric schedule (alpha).
             iterations_per_temp (int): The number of MCMC steps at each temperature
                                        (Markov chain length).
+            num_reads (int): Number of independent annealing runs to perform in parallel.
         """
         if not initial_temp > final_temp > 0:
             raise ValueError("Temperatures must be positive and initial > final.")
         
+        if num_reads < 1:
+            raise ValueError("num_reads must be at least 1.")
+
         self.qubo = qubo
         self.initial_temp = initial_temp
         self.final_temp = final_temp
         self.cooling_rate = cooling_rate
         self.iterations_per_temp = iterations_per_temp
         self.track_history = track_history
+        self.num_reads = num_reads
+        self.multiprocessing = multiprocessing
 
         self.schedule = schedule
         # Set default parameters for our default schedule
@@ -57,14 +65,17 @@ class Solver:
         else:
             self.schedule_params = schedule_params
 
-    def solve(self) -> SolverResult:
+    def _single_read(self) -> SolverResult:
         """
-        Runs the simulated annealing algorithm to find the optimal solution.
-
+        Performs a single simulated annealing run.
+        
         Returns:
-            SolverResult: A dataclass object containing the best state,
-                          its energy, and the convergence history.
+            SolverResult: Result of the single annealing run.
         """
+        # Re-seed random number generator to ensure independence in parallel processes
+        # Using entropy from OS
+        np.random.seed()
+
         # 1. Initialize the system
         current_state = np.random.randint(0, 2, size=self.qubo.num_variables)
         current_energy = self.qubo.energy(current_state)
@@ -80,60 +91,82 @@ class Solver:
                 "temperatures": [],
                 "current_energies": [],
                 "best_energies": [],
-                "acceptance_rates": [],  # Added for plotting
+                "acceptance_rates": [],
                 "iterations": []
             }
 
         # 2. Main annealing loop
         while current_temp > self.final_temp:
-            accepted_moves = 0
+            # Run entire MCMC chain at once using JIT
+            # Returns: (final_state, final_energy, accepted_moves, best_chain_state, best_chain_energy)
+            current_state, current_energy, accepted_moves, chain_best_state, chain_best_energy = jit.mcmc_chain(
+                self.qubo.Q, current_state, current_energy, current_temp, self.iterations_per_temp
+            )
             
-            if self.track_history:
-                # 2a. Run MCMC steps at the current temperature (slow path, tracks history)
-                for _ in range(self.iterations_per_temp):
-                    new_state, new_energy = run_mcmc_step(
-                        self.qubo, current_state, current_energy, current_temp
-                    )
-                    
-                    if new_energy != current_energy:
-                        accepted_moves += 1
-
-                    current_state, current_energy = new_state, new_energy
-
-                    if current_energy < best_energy:
-                        best_energy = current_energy
-                        best_state = current_state.copy()
-            else:
-                # 2b. Run entire MCMC chain at once (fast path)
-                current_state, current_energy, accepted_moves = jit.mcmc_chain(
-                    self.qubo.Q, current_state, current_energy, current_temp, self.iterations_per_temp
-                )
-                
-                if current_energy < best_energy:
-                    # Note: with mcmc_chain, we only check for best_energy at the end of the chain.
-                    # This is slightly different from the step-by-step check but practically sufficient.
-                    best_energy = current_energy
-                    best_state = current_state.copy()
+            # Update best found so far
+            if chain_best_energy < best_energy:
+                best_energy = chain_best_energy
+                best_state = chain_best_state.copy()
             
             if self.track_history:
                 history["temperatures"].append(current_temp)
                 history["current_energies"].append(current_energy)
                 history["best_energies"].append(best_energy)
-                # Calculate and store the acceptance rate for this temperature
                 acceptance_rate = accepted_moves / self.iterations_per_temp
                 history["acceptance_rates"].append(acceptance_rate)
-                # Calculate cumulative iterations: (current_index + 1) * iterations_per_temp
-                # Use len(history['temperatures']) which now includes the current step
                 cumulative_iterations = len(history["temperatures"]) * self.iterations_per_temp
                 history["iterations"].append(cumulative_iterations)
             
             # 2c. Cool down the system
             current_temp = self.schedule(current_temp, self.schedule_params)
 
-        print(f"Annealing complete. Final energy: {best_energy}")
-
         return SolverResult(
             state=best_state,
             energy=best_energy,
             history=history
         )
+
+    def solve(self) -> SolverResult:
+        """
+        Runs the simulated annealing algorithm. If num_reads > 1, runs multiple
+        annealing runs (in parallel) and returns the best result.
+
+        Returns:
+            SolverResult: The best result found across all reads.
+        """
+        best_result = None
+        
+        if self.multiprocessing:
+            # Parallel execution
+            results = []
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                # We map the _single_read function to a range of run_ids
+                futures = [executor.submit(self._single_read) for i in range(self.num_reads)]
+                
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        print(f"Run generated an exception: {e}")
+
+            # Find the best result
+            if not results:
+                raise RuntimeError("No results generated from parallel execution.")
+
+            best_result = min(results, key=lambda x: x.energy)
+            print(f"Parallel annealing complete ({self.num_reads} reads). Best energy: {best_result.energy}")
+
+        else:
+            for i in range(self.num_reads):
+                result = self._single_read()
+                print(f"Annealing run {i+1} complete. Final energy: {result.energy}")
+            
+                if best_result is None or result.energy < best_result.energy:
+                    best_result = result
+
+        if best_result is None:
+            raise RuntimeError("Solver failed to produce any result.")
+
+        print(f"Annealing complete. Final energy: {best_result.energy}")
+        
+        return best_result
