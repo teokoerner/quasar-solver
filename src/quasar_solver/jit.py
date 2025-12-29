@@ -28,6 +28,26 @@ def energy_delta(Q: np.ndarray, x: np.ndarray, flip_index: int) -> float:
     return float(delta_E)
 
 @njit
+def energy_delta_multi(Q: np.ndarray, x: np.ndarray, flip_indices: np.ndarray) -> float:
+    """
+    Calculates the energy change for flipping multiple bits simultaneously.
+    """
+    delta_total = 0.0
+    
+    # We must tentatively flip bits to correctly calculate the interaction terms
+    # for subsequent flips in the set.
+    for i in flip_indices:
+        d = energy_delta(Q, x, i)
+        delta_total += d
+        x[i] = 1.0 - x[i]
+        
+    # Revert the flips (restore original state)
+    for i in flip_indices:
+        x[i] = 1.0 - x[i]
+        
+    return delta_total
+
+@njit
 def mcmc_step(
     Q: np.ndarray,
     current_state: np.ndarray,
@@ -61,15 +81,15 @@ def mcmc_chain(
     current_energy: float,
     temperature: float,
     iterations: int,
-) -> Tuple[np.ndarray, float, int, np.ndarray, float]:
+    multi_flip_prob: float = 0.1,
+    k: int = 2
+) -> Tuple[np.ndarray, float, int, np.ndarray, float, float]:
     """
     JIT-optimized execution of multiple MCMC steps (a Markov chain) at a fixed temperature.
-    This provides massive performance gains by avoiding Python loop overhead and 
-    repetitive JIT function call overhead.
     
     Returns:
-        Tuple[np.ndarray, float, int, np.ndarray, float]: 
-            (final_state, final_energy, accepted_moves_count, best_state_in_chain, best_energy_in_chain)
+        Tuple[np.ndarray, float, int, np.ndarray, float, float]: 
+            (final_state, final_energy, accepted_moves_count, best_state_in_chain, best_energy_in_chain, energy_std)
     """
     num_vars = len(current_state)
     accepted_moves = 0
@@ -79,17 +99,57 @@ def mcmc_chain(
     best_state = state.copy()
     best_energy = energy
     
+    # Statistics for adaptive cooling
+    sum_energy = 0.0
+    sum_energy_sq = 0.0
+    
+    # Pre-allocate array for single flips to avoid overhead
+    single_flip_array = np.zeros(1, dtype=np.int64)
+    
     for _ in range(iterations):
-        flip_index = np.random.randint(0, num_vars)
-        delta_E = energy_delta(Q, state, flip_index)
+        if np.random.rand() > multi_flip_prob:
+            # Single flip (Standard)
+            flip_index = np.random.randint(0, num_vars)
+            delta_E = energy_delta(Q, state, flip_index)
+            # Use pre-allocated array or just handle logic directly to avoid array creation overhead
+            # Logic branch to avoid array creation for single flip case is faster
+            is_multi = False
+        else:
+            # Multi-flip
+            force_multi = True
+            # Numba compatible choice without replacement
+            # For small k, this loop is fine. For large k, permutation is better.
+            # safe for k << N
+            flip_indices = np.random.choice(num_vars, k, replace=False)
+            delta_E = energy_delta_multi(Q, state, flip_indices)
+            is_multi = True
         
         if delta_E < 0 or (temperature > 1e-9 and np.random.rand() < np.exp(-delta_E / temperature)):
-            state[flip_index] = 1.0 - state[flip_index]
+            if is_multi:
+                for i in flip_indices:
+                    state[i] = 1.0 - state[i]
+            else:
+                state[flip_index] = 1.0 - state[flip_index]
+                
             energy += delta_E
             accepted_moves += 1
             
             if energy < best_energy:
                 best_energy = energy
                 best_state = state.copy()
+        
+        # Sample energy at every step
+        sum_energy += energy
+        sum_energy_sq += energy * energy
             
-    return state, energy, accepted_moves, best_state, best_energy
+    # Calculate Standard Deviation
+    mean_energy = sum_energy / iterations
+    variance = (sum_energy_sq / iterations) - (mean_energy * mean_energy)
+    
+    # Numerical stability check
+    if variance < 0:
+        variance = 0.0
+        
+    energy_std = np.sqrt(variance)
+            
+    return state, energy, accepted_moves, best_state, best_energy, energy_std

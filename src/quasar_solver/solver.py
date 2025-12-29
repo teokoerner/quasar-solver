@@ -5,8 +5,8 @@ import concurrent.futures
 from typing import Callable, Dict, Any, Optional
 
 from .qubo import QUBO
-from .schedules import geometric_cooling
-from .utils import SolverResult
+from .schedules import geometric_cooling, adaptive_cooling
+from .utils import SolverResult, estimate_parameters
 from . import jit
 
 class Solver:
@@ -21,49 +21,89 @@ class Solver:
     def __init__(
         self,
         qubo: QUBO,
-        initial_temp: float = 5.0,
-        final_temp: float = 0.1,
-        cooling_rate: float = 0.99,
-        schedule: Callable[[float, Dict[str, Any]], float] = geometric_cooling,
+        initial_temp: Optional[float] = None,
+        final_temp: Optional[float] = None,
+        cooling_rate: Optional[float] = None,
+        schedule: Callable[[float, Dict[str, Any]], float] = None,
         track_history: bool = False,
         schedule_params: Optional[Dict[str, Any]] = None,
-        iterations_per_temp: int = 100,
-        num_reads: int = 1,
-        multiprocessing: bool = False
+        iterations_per_temp: Optional[int] = None,
+        num_reads: Optional[int] = None,
+        multiprocessing: bool = True
     ):
         """
         Initializes the SA Solver with annealing parameters.
+        
+        If parameters are not provided (None), they will be estimated based on the QUBO matrix.
 
         Args:
             qubo (QUBO): The QUBO problem instance to be solved.
-            initial_temp (float): The starting temperature.
-            final_temp (float): The temperature at which to stop annealing.
-            cooling_rate (float): The cooling factor for the geometric schedule (alpha).
-            iterations_per_temp (int): The number of MCMC steps at each temperature
-                                       (Markov chain length).
-            num_reads (int): Number of independent annealing runs to perform in parallel.
+            initial_temp (float, optional): The starting temperature.
+            final_temp (float, optional): The temperature at which to stop annealing.
+            cooling_rate (float, optional): The cooling factor for the geometric schedule (alpha).
+            iterations_per_temp (int, optional): The number of MCMC steps at each temperature.
+            num_reads (int, optional): Number of independent annealing runs to perform in parallel.
         """
-        if not initial_temp > final_temp > 0:
-            raise ValueError("Temperatures must be positive and initial > final.")
+        # Estimate defaults if any are missing
+        est_initial, est_final, est_iter, est_cooling, est_reads,est_schedule = estimate_parameters(qubo.Q)
         
-        if num_reads < 1:
-            raise ValueError("num_reads must be at least 1.")
+        self.initial_temp = initial_temp if initial_temp is not None else est_initial
+        self.final_temp = final_temp if final_temp is not None else est_final
+        self.cooling_rate = cooling_rate if cooling_rate is not None else est_cooling
+        self.iterations_per_temp = iterations_per_temp if iterations_per_temp is not None else est_iter
+        self.num_reads = num_reads if num_reads is not None else est_reads
+        default_schedule = geometric_cooling if est_schedule == 'geometric' else adaptive_cooling
+        self.schedule = schedule if schedule is not None else default_schedule
+        
+        # Validation
+        if self.initial_temp <= 0:
+            raise ValueError(f"initial_temp must be positive, got {self.initial_temp}")
+        if self.final_temp <= 0:
+            raise ValueError(f"final_temp must be positive, got {self.final_temp}")
+        if self.initial_temp <= self.final_temp:
+            raise ValueError(f"initial_temp ({self.initial_temp}) must be greater than final_temp ({self.final_temp})")
+            
+        if not (0 < self.cooling_rate < 1):
+             raise ValueError(f"cooling_rate must be between 0 and 1 (exclusive), got {self.cooling_rate}")
+             
+        if self.iterations_per_temp < 1:
+            raise ValueError(f"iterations_per_temp must be at least 1, got {self.iterations_per_temp}")
+
+        if self.num_reads < 1:
+            raise ValueError(f"num_reads must be at least 1, got {self.num_reads}")
+
+        if self.schedule is None:
+            raise ValueError(f"schedule must be provided, got {self.schedule}")
 
         self.qubo = qubo
-        self.initial_temp = initial_temp
-        self.final_temp = final_temp
-        self.cooling_rate = cooling_rate
-        self.iterations_per_temp = iterations_per_temp
         self.track_history = track_history
-        self.num_reads = num_reads
         self.multiprocessing = multiprocessing
 
-        self.schedule = schedule
-        # Set default parameters for our default schedule
+        
+        # Set default parameters based on schedule type
         if schedule_params is None:
-            self.schedule_params = {'alpha': 0.99}
+            self.schedule_params = {}
         else:
-            self.schedule_params = schedule_params
+            self.schedule_params = schedule_params.copy() # Avoid side effects
+
+        if self.schedule == geometric_cooling:
+             if 'alpha' not in self.schedule_params:
+                self.schedule_params['alpha'] = 0.99
+        elif self.schedule == adaptive_cooling:
+             if 'lambda' not in self.schedule_params:
+                # 1. Internal Heuristic for Lambda (Hidden from User)
+                # Dense matrices with high off-diagonal variance imply a rough landscape
+                q_off_diag = self.qubo.Q - np.diag(np.diag(self.qubo.Q))
+                if np.any(q_off_diag):
+                    coupling_strength = np.std(q_off_diag[q_off_diag != 0])
+                else:
+                    coupling_strength = 1.0
+                
+                # Map coupling strength to a lambda between 0.4 (hard) and 0.8 (easy)
+                # This automatically slows down for your 12-city TSP
+                auto_lambda = max(0.4, min(0.8, 1.0 / (1.0 + np.log1p(coupling_strength))))
+                
+                self.schedule_params['lambda'] = auto_lambda
 
     def _single_read(self) -> SolverResult:
         """
@@ -86,6 +126,9 @@ class Solver:
         current_temp = self.initial_temp
         history: Dict[str, Any] = {}
         
+        # Adaptive multi-flip probability
+        multi_flip_prob = 0.05
+        
         if self.track_history:
             history = {
                 "temperatures": [],
@@ -98,9 +141,10 @@ class Solver:
         # 2. Main annealing loop
         while current_temp > self.final_temp:
             # Run entire MCMC chain at once using JIT
-            # Returns: (final_state, final_energy, accepted_moves, best_chain_state, best_chain_energy)
-            current_state, current_energy, accepted_moves, chain_best_state, chain_best_energy = jit.mcmc_chain(
-                self.qubo.Q, current_state, current_energy, current_temp, self.iterations_per_temp
+            # Returns: (final_state, final_energy, accepted_moves, best_chain_state, best_chain_energy, energy_std)
+            current_state, current_energy, accepted_moves, chain_best_state, chain_best_energy, energy_std = jit.mcmc_chain(
+                self.qubo.Q, current_state, current_energy, current_temp, self.iterations_per_temp,
+                multi_flip_prob=multi_flip_prob, k=2
             )
             
             # Update best found so far
@@ -108,16 +152,25 @@ class Solver:
                 best_energy = chain_best_energy
                 best_state = chain_best_state.copy()
             
+            acceptance_rate = accepted_moves / self.iterations_per_temp
+            
+            # Dynamic adjustment of multi-flip probability to escape local minima
+            if acceptance_rate < 0.05:
+                multi_flip_prob = 0.2 # System is stuck, increase perturbation
+            elif acceptance_rate > 0.2:
+                multi_flip_prob = 0.05 # Healthy acceptance, revert to standard
+            
             if self.track_history:
                 history["temperatures"].append(current_temp)
                 history["current_energies"].append(current_energy)
                 history["best_energies"].append(best_energy)
-                acceptance_rate = accepted_moves / self.iterations_per_temp
                 history["acceptance_rates"].append(acceptance_rate)
                 cumulative_iterations = len(history["temperatures"]) * self.iterations_per_temp
                 history["iterations"].append(cumulative_iterations)
             
             # 2c. Cool down the system
+            # Update schedule_params with current statistics
+            self.schedule_params['sigma'] = energy_std
             current_temp = self.schedule(current_temp, self.schedule_params)
 
         return SolverResult(
@@ -154,12 +207,10 @@ class Solver:
                 raise RuntimeError("No results generated from parallel execution.")
 
             best_result = min(results, key=lambda x: x.energy)
-            print(f"Parallel annealing complete ({self.num_reads} reads). Best energy: {best_result.energy}")
 
         else:
             for i in range(self.num_reads):
                 result = self._single_read()
-                print(f"Annealing run {i+1} complete. Final energy: {result.energy}")
             
                 if best_result is None or result.energy < best_result.energy:
                     best_result = result

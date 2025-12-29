@@ -1,8 +1,59 @@
 # src/quasar_solver/utils.py
 
 import numpy as np
+import os
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
+
+def estimate_parameters(Q: np.ndarray) -> Tuple[float, float, int, float, int]:
+    """
+    Estimates optimal solver parameters based on QUBO properties.
+
+    Args:
+        Q (np.ndarray): The QUBO matrix.
+
+    Returns:
+        tuple: (initial_temp, final_temp, iterations_per_temp, cooling_rate, num_reads)
+    """
+    N = Q.shape[0]
+    abs_q = np.abs(Q)
+    density = np.count_nonzero(Q) / (N * N)
+    
+    # Estimate Energy Scale (Max Delta E) using row sums as a proxy for potential flip impact
+    max_delta = np.max(np.sum(abs_q, axis=1)) 
+    
+    # Estimate Minimum Gap (Min Delta E). Zeroes are filtered out to avoid min_delta being 0 
+    # for sparse matrices
+    non_zero_elements = abs_q[abs_q > 0]
+    min_delta = np.min(non_zero_elements) if non_zero_elements.size > 0 else 0.1
+
+    # Apply Heuristics
+    initial_temp = -max_delta / np.log(0.8) # 80% initial acceptance
+    final_temp = -min_delta / np.log(0.0001) # Near-zero acceptance
+    iterations_per_temp = N * 10 
+    
+    # Cooling rate heuristic
+    cooling_rate = 0.99 if N > 100 else 0.95
+    
+    # Num reads heuristic
+    cpu_count = os.cpu_count() or 1
+    num_reads = max(cpu_count, int(np.sqrt(N)))
+
+    # Calculate Coefficient of Variation (CV) of the weights
+    # High CV implies a 'spiky' landscape with strong local traps
+    non_zero_q = Q[Q != 0]
+    cv = np.std(non_zero_q) / np.abs(np.mean(non_zero_q)) if len(non_zero_q) > 0 else 0
+    
+    # The Heuristic Rule
+    # If the problem is dense (>40%) OR has high weight variance (>1.5), 
+    # use Huang. Otherwise, stick to Geometric for speed.
+    if density > 0.4 or cv > 1.5:
+        schedule = 'adaptive'
+    else:
+        schedule = 'geometric'
+
+    return initial_temp, final_temp, iterations_per_temp, cooling_rate, num_reads, schedule
+
 
 @dataclass(frozen=True)
 class SolverResult:
