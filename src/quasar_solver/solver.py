@@ -10,12 +10,70 @@ from .utils import SolverResult, estimate_parameters
 from . import jit
 
 class Solver:
-    """
-    A Simulated Annealing (SA) solver for QUBO problems.
+    """A Simulated Annealing (SA) solver for QUBO problems.
 
     This class orchestrates the entire annealing process, managing the state,
     temperature, and iterations to find a low-energy solution for a given
     QUBO problem.
+
+    Parameters
+    ----------
+    qubo : QUBO
+        The QUBO problem instance to be solved.
+
+    initial_temp : float, optional
+        The starting temperature. If None, it is estimated from the QUBO matrix.
+
+    final_temp : float, optional
+        The temperature at which to stop annealing. If None, it is estimated.
+
+    cooling_rate : float, optional
+        The cooling factor for the geometric schedule (alpha). If None, it is estimated.
+
+    schedule : callable, optional
+        Function to calculate the next temperature. Signature: `f(current_temp, params) -> next_temp`.
+        If None, defaults to `geometric_cooling` or `adaptive_cooling` based on heuristics.
+
+    track_history : bool, optional (default=False)
+        If True, records temperature, energy, and acceptance rates during annealing.
+
+    schedule_params : dict, optional
+        Parameters passed to the schedule function (e.g., {'alpha': 0.99}).
+
+    iterations_per_temp : int, optional
+        The number of MCMC steps at each temperature. If None, it is estimated.
+
+    num_reads : int, optional
+        Number of independent annealing runs to perform. If None, it is estimated.
+
+    multiprocessing : bool, optional (default=True)
+        If True and num_reads > 1, runs reads in parallel using ProcessPoolExecutor.
+
+    Attributes
+    ----------
+    qubo : QUBO
+        The QUBO problem instance.
+
+    initial_temp : float
+        Starting temperature.
+
+    final_temp : float
+        Stopping temperature.
+
+    cooling_rate : float
+        Geometric cooling rate (if used).
+
+    iterations_per_temp : int
+        Steps per temperature level.
+
+    num_reads : int
+        Number of independent runs.
+
+    schedule : callable
+        The cooling schedule function.
+
+    schedule_params : dict
+        Parameters for the cooling schedule.
     """
 
     def __init__(
@@ -31,18 +89,9 @@ class Solver:
         num_reads: Optional[int] = None,
         multiprocessing: bool = True
     ):
-        """
-        Initializes the SA Solver with annealing parameters.
-        
-        If parameters are not provided (None), they will be estimated based on the QUBO matrix.
+        """Initializes the SA Solver with annealing parameters.
 
-        Args:
-            qubo (QUBO): The QUBO problem instance to be solved.
-            initial_temp (float, optional): The starting temperature.
-            final_temp (float, optional): The temperature at which to stop annealing.
-            cooling_rate (float, optional): The cooling factor for the geometric schedule (alpha).
-            iterations_per_temp (int, optional): The number of MCMC steps at each temperature.
-            num_reads (int, optional): Number of independent annealing runs to perform in parallel.
+        If parameters are not provided (None), they will be estimated based on the QUBO matrix.
         """
         # Estimate defaults if any are missing
         est_initial, est_final, est_iter, est_cooling, est_reads,est_schedule = estimate_parameters(qubo.Q)
@@ -106,11 +155,13 @@ class Solver:
                 self.schedule_params['lambda'] = auto_lambda
 
     def _single_read(self) -> SolverResult:
-        """
-        Performs a single simulated annealing run.
+        """Performs a single simulated annealing run.
         
-        Returns:
-            SolverResult: Result of the single annealing run.
+        Returns
+        -------
+        SolverResult
+            Result of the single annealing run containing the best state,
+            energy, and history (if tracked).
         """
         # Re-seed random number generator to ensure independence in parallel processes
         # Using entropy from OS
@@ -180,12 +231,15 @@ class Solver:
         )
 
     def solve(self) -> SolverResult:
-        """
-        Runs the simulated annealing algorithm. If num_reads > 1, runs multiple
-        annealing runs (in parallel) and returns the best result.
+        """Runs the simulated annealing algorithm.
 
-        Returns:
-            SolverResult: The best result found across all reads.
+        If num_reads > 1, runs multiple annealing runs (in parallel or sequentially)
+        and returns the best result found.
+
+        Returns
+        -------
+        SolverResult
+            The best result found across all reads, minimizing the energy.
         """
         best_result = None
         

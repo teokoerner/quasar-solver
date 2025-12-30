@@ -6,14 +6,23 @@ from dataclasses import dataclass
 from typing import Dict, Any, Tuple
 
 def estimate_parameters(Q: np.ndarray) -> Tuple[float, float, int, float, int]:
-    """
-    Estimates optimal solver parameters based on QUBO properties.
+    """Estimates optimal solver parameters based on QUBO properties.
 
-    Args:
-        Q (np.ndarray): The QUBO matrix.
+    Parameters
+    ----------
+    Q : np.ndarray
+        The QUBO matrix.
 
-    Returns:
-        tuple: (initial_temp, final_temp, iterations_per_temp, cooling_rate, num_reads)
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - initial_temp (float)
+        - final_temp (float)
+        - iterations_per_temp (int)
+        - cooling_rate (float)
+        - num_reads (int)
+        - schedule (str): 'geometric' or 'adaptive'
     """
     N = Q.shape[0]
     abs_q = np.abs(Q)
@@ -57,18 +66,21 @@ def estimate_parameters(Q: np.ndarray) -> Tuple[float, float, int, float, int]:
 
 @dataclass(frozen=True)
 class SolverResult:
-    """
-    A data structure to hold the results of a simulated annealing run.
+    """A data structure to hold the results of a simulated annealing run.
 
     Using a dataclass provides type hints, attribute access, and immutability.
 
-    Attributes:
-        state (np.ndarray): The best binary state vector found.
-        energy (float): The energy of the best state.
-        history (Dict[str, Any]): A dictionary containing the run's history data,
-                                  such as temperatures and energies over time.
-                                  This will be empty if the solver was run
-                                  with `track_history=False`.
+    Attributes
+    ----------
+    state : np.ndarray
+        The best binary state vector found.
+
+    energy : float
+        The energy of the best state.
+
+    history : dict
+        A dictionary containing the run's history data (temperatures, energies, etc.).
+        Empty if `track_history=False`.
     """
     state: np.ndarray
     energy: float
@@ -82,18 +94,23 @@ class ModelConverter:
 
     @staticmethod
     def from_pyqubo(model, feed_dict):
-        """
-        Converts a PyQUBO model into a NumPy matrix and an energy offset.
+        """Converts a PyQUBO model into a NumPy matrix and an energy offset.
         
-        Args:
-            model: A compiled pyqubo.Model object.
-            feed_dict: A dictionary of values for placeholders in the model (usually penalty values).
+        Parameters
+        ----------
+        model : pyqubo.Model
+            A compiled pyqubo.Model object.
+
+        feed_dict : dict
+            A dictionary of values for placeholders in the model (usually penalty values).
             
-        Returns:
-            tuple: (Q_matrix, offset, label_map)
-                - Q_matrix: np.ndarray of shape (N, N)
-                - offset: float representing the constant energy shift
-                - label_map: list of variable names corresponding to indices
+        Returns
+        -------
+        tuple
+            A tuple containing:
+            - Q_matrix (np.ndarray): shape (N, N)
+            - offset (float): constant energy shift
+            - label_map (list): variable names corresponding to indices
         """
         # 1. Extract the QUBO dict and offset from PyQUBO
         # The dict keys are tuples of variable names (e.g., ('x[0]', 'x[1]'))
@@ -119,8 +136,20 @@ class ModelConverter:
 
     @staticmethod
     def decode_solution(binary_vector, label_map):
-        """
-        Maps the raw binary output from the solver back to PyQUBO variable names.
+        """Maps the raw binary output from the solver back to PyQUBO variable names.
+
+        Parameters
+        ----------
+        binary_vector : array-like
+            The binary solution vector.
+
+        label_map : list of str
+            List of variable names corresponding to the indices in `binary_vector`.
+
+        Returns
+        -------
+        dict
+            Dictionary mapping variable names to their binary values (0 or 1).
         """
         return {label: int(val) for label, val in zip(label_map, binary_vector)}
     

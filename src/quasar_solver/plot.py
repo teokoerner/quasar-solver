@@ -21,7 +21,16 @@ def set_plot_style():
 set_plot_style()
 
 def _save_and_show(fig: plt.Figure, save_path: Optional[str] = None):
-    """Helper to save and/or show the plot."""
+    """Helper to save and/or show the plot.
+
+    Parameters
+    ----------
+    fig : plt.Figure
+        The figure object to handle.
+        
+    save_path : str, optional
+        Path where the figure should be reserved.
+    """
     plt.tight_layout()
     if save_path:
         output_dir = os.path.dirname(save_path)
@@ -32,16 +41,19 @@ def _save_and_show(fig: plt.Figure, save_path: Optional[str] = None):
     plt.show()
 
 def plot_energy_convergence(history: Dict[str, Any], save_path: Optional[str] = None):
-    """
-    Plots the energy convergence over iterations (Time).
+    """Plots the energy convergence over iterations (Time).
     
     Displays:
     1. Current Energy (noisy)
     2. Best-So-Far Energy (monotonic)
     
-    Args:
-        history: Solver history containing 'iterations', 'current_energies', 'best_energies'.
-        save_path: Optional path to save the figure.
+    Parameters
+    ----------
+    history : dict
+        Solver history containing 'iterations', 'current_energies', 'best_energies'.
+        
+    save_path : str, optional
+        Optional path to save the figure.
     """
     required_keys = ['current_energies', 'best_energies']
     if not all(key in history for key in required_keys):
@@ -73,15 +85,18 @@ def plot_energy_convergence(history: Dict[str, Any], save_path: Optional[str] = 
     _save_and_show(fig, save_path)
 
 def plot_acceptance_probability(history: Dict[str, Any], save_path: Optional[str] = None):
-    """
-    Plots the acceptance probability of uphill moves against Temperature.
+    """Plots the acceptance probability of uphill moves against Temperature.
     
     Helps diagnose if the cooling schedule allows for sufficient exploration 
     (high acceptance at start) and proper exploitation (low acceptance at end).
     
-    Args:
-        history: Solver history containing 'temperatures', 'acceptance_rates'.
-        save_path: Optional path to save the figure.
+    Parameters
+    ----------
+    history : dict
+        Solver history containing 'temperatures', 'acceptance_rates'.
+        
+    save_path : str, optional
+        Optional path to save the figure.
     """
     required_keys = ['temperatures', 'acceptance_rates']
     if not all(key in history for key in required_keys):
@@ -108,12 +123,15 @@ def plot_acceptance_probability(history: Dict[str, Any], save_path: Optional[str
     _save_and_show(fig, save_path)
 
 def plot_temperature_schedule(history: Dict[str, Any], save_path: Optional[str] = None):
-    """
-    Plots the temperature cooling schedule over iterations.
+    """Plots the temperature cooling schedule over iterations.
     
-    Args:
-        history: Solver history containing 'iterations', 'temperatures'.
-        save_path: Optional path to save the figure.
+    Parameters
+    ----------
+    history : dict
+        Solver history containing 'iterations', 'temperatures'.
+        
+    save_path : str, optional
+        Optional path to save the figure.
     """
     required_keys = ['temperatures']
     if not all(key in history for key in required_keys):

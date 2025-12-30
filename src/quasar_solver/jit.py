@@ -6,10 +6,25 @@ from typing import Tuple
 
 @njit
 def energy_delta(Q: np.ndarray, x: np.ndarray, flip_index: int) -> float:
-    """
-    JIT-optimized calculation of the change in energy from flipping a single bit.
+    """JIT-optimized calculation of the change in energy from flipping a single bit.
     
     ΔE = (1 - 2*x_i) * (Q_ii + sum_{j!=i} (Q_ij + Q_ji) * x_j)
+
+    Parameters
+    ----------
+    Q : np.ndarray
+        The QUBO matrix.
+
+    x : np.ndarray
+        The current binary state vector.
+
+    flip_index : int
+        The index of the bit to be flipped.
+
+    Returns
+    -------
+    float
+        The calculated energy difference.
     """
     # Use a loop-based dot product for robust Numba/Scipy compatibility
     row_sum = 0.0
@@ -29,8 +44,23 @@ def energy_delta(Q: np.ndarray, x: np.ndarray, flip_index: int) -> float:
 
 @njit
 def energy_delta_multi(Q: np.ndarray, x: np.ndarray, flip_indices: np.ndarray) -> float:
-    """
-    Calculates the energy change for flipping multiple bits simultaneously.
+    """Calculates the energy change for flipping multiple bits simultaneously.
+
+    Parameters
+    ----------
+    Q : np.ndarray
+        The QUBO matrix.
+
+    x : np.ndarray
+        The current binary state vector.
+
+    flip_indices : np.ndarray
+        Array of indices to be flipped.
+
+    Returns
+    -------
+    float
+        The total energy difference for the multi-bit flip.
     """
     delta_total = 0.0
     
@@ -55,8 +85,29 @@ def mcmc_step(
     temperature: float,
     num_variables: int,
 ) -> Tuple[np.ndarray, float]:
-    """
-    JIT-optimized execution of a single MCMC step.
+    """JIT-optimized execution of a single MCMC step.
+
+    Parameters
+    ----------
+    Q : np.ndarray
+        The QUBO matrix.
+
+    current_state : np.ndarray
+        The current state vector.
+
+    current_energy : float
+        The current energy.
+
+    temperature : float
+        The current temperature.
+
+    num_variables : int
+        Total number of variables (N).
+
+    Returns
+    -------
+    tuple
+        A tuple containing (new_state, new_energy).
     """
     # 1. Propose a move: Select a random bit to flip
     flip_index = np.random.randint(0, num_variables)
@@ -84,12 +135,41 @@ def mcmc_chain(
     multi_flip_prob: float = 0.1,
     k: int = 2
 ) -> Tuple[np.ndarray, float, int, np.ndarray, float, float]:
-    """
-    JIT-optimized execution of multiple MCMC steps (a Markov chain) at a fixed temperature.
-    
-    Returns:
-        Tuple[np.ndarray, float, int, np.ndarray, float, float]: 
-            (final_state, final_energy, accepted_moves_count, best_state_in_chain, best_energy_in_chain, energy_std)
+    """JIT-optimized execution of multiple MCMC steps (a Markov chain) at a fixed temperature.
+
+    Parameters
+    ----------
+    Q : np.ndarray
+        The QUBO matrix.
+
+    current_state : np.ndarray
+        The starting state vector for this chain.
+
+    current_energy : float
+        The starting energy.
+
+    temperature : float
+        The fixed temperature for this chain.
+
+    iterations : int
+        Number of steps to perform.
+
+    multi_flip_prob : float, optional
+        Probability of performing a multi-bit flip (default 0.1).
+
+    k : int, optional
+        Number of bits to flip in a multi-flip move (default 2).
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - final_state (np.ndarray)
+        - final_energy (float)
+        - accepted_moves_count (int)
+        - best_state_in_chain (np.ndarray)
+        - best_energy_in_chain (float)
+        - energy_std (float)
     """
     num_vars = len(current_state)
     accepted_moves = 0
